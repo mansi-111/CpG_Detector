@@ -24,6 +24,49 @@ class CpGPredictor(nn.Module):
         return out
     
 app = Flask(__name__)
+import torch
+import torch.nn as nn
+import torch.nn.functional as F  # Import functional layer for embedding
+
+class CPGCounter(nn.Module):
+  def __init__(self, input_size, embedding_dim, hidden_size,num_layers,dropout_prob =0.2):
+    super(CPGCounter, self).__init__()
+    self.embedding = nn.Embedding(input_size, embedding_dim,padding_idx=0)  # Define embedding layer
+    # self.lstm = nn.LSTM(embedding_dim, hidden_size)
+    self.lstm = nn.LSTM(embedding_dim, hidden_size, num_layers,dropout=dropout_prob, batch_first=True)
+    self.linear = nn.Linear(hidden_size, 1)
+
+  def forward(self, x):
+    # Embed DNA characters
+    embeddings = self.embedding(x)
+
+    # Pass through LSTM
+    lstm_out, _ = self.lstm(embeddings)
+
+    # Get last output and predict count
+    output = self.linear(lstm_out[:, -1, :])
+    return output
+  
+model_emb = torch.load("model_with_embedding/CP_count_model_padding_with_emb.pth")
+
+def model_prediction_with_emb(input_string):
+    # Save the model
+    
+    nucleotide_to_index = {'N': 1, 'A': 2, 'C': 3, 'G': 4, 'T': 5, 'pad': 0}
+
+    # Function to convert a string of nucleotides to a tensor
+    def string_to_tensor(s, mapping):
+        max_length = 128
+        # Convert the string to a list of integers
+        indices = [mapping[c] for c in s]
+        padding_length = max_length - len(indices)
+        indices.extend([0] * padding_length)  # Pad with
+        tensor = torch.LongTensor([indices])
+        return tensor
+    test_tensor = string_to_tensor(input_string, nucleotide_to_index)
+    output = model_emb(test_tensor)
+    output = output.squeeze().tolist()
+    return output
 
 def model_prediction(input_string):
     # Define the mapping from nucleotides to integers
@@ -70,7 +113,7 @@ def home():
 def predict():
     # Get the input string from the form
     input_string = request.form['input_string']
-    output = model_prediction(input_string)
+    output = model_prediction_with_emb(input_string)
     return render_template('result.html', output=output)
 
 if __name__ == '__main__':
